@@ -62,7 +62,11 @@ export function useTeams(org: string, project: string) {
   return useQuery({
     queryKey: [org, project, 'teams'],
     enabled: !!org && !!project,
-    queryFn: () => adoList<Team>({ org, path: `_apis/projects/${seg(project)}/teams`, query: { $top: 500 } })
+    // Ordem alfabética (com números em ordem natural: "Squad 9" antes de "Squad 10") em todos os seletores de time
+    queryFn: async () =>
+      (await adoList<Team>({ org, path: `_apis/projects/${seg(project)}/teams`, query: { $top: 500 } })).sort((a, b) =>
+        a.name.localeCompare(b.name, 'pt-BR', { numeric: true, sensitivity: 'base' })
+      )
   })
 }
 
