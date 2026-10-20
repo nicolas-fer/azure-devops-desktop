@@ -1,6 +1,8 @@
 // Formulário de work item: usado na rota workitems/:id e no SidePanel de qualquer lista/quadro.
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { prZone } from '@/lib/zones'
 import { Copy, Download, Paperclip, Pencil, Plus, Save, Send, Trash2, X, History as HistoryIcon } from 'lucide-react'
 import { ado, adoList, seg, webUrl, AdoError, saveBase64 } from '@/lib/api'
 import { Button, Field, Html, IconButton, Input, QueryView, Select, Tabs, Textarea, TimeAgo, Person, ExternalButton, Empty, Code, Badge, StateLabel, formatDate, Loading } from '@/components/ui'
@@ -687,6 +689,8 @@ function Links({ org, project, wi, onOpen, onChanged }: { org: string; project: 
                   <button type="button" onClick={() => onOpen?.(wid)} className="narrow font-semibold text-new-ink hover:underline">
                     #{wid}
                   </button>
+                ) : parseGitArtifact(r.url) ? (
+                  <GitArtifactLink org={org} artifact={parseGitArtifact(r.url)!} />
                 ) : (
                   <Code className="max-w-[320px] truncate">{(r.attributes?.name as string | undefined) ?? r.url}</Code>
                 )}
@@ -703,6 +707,90 @@ function Links({ org, project, wi, onOpen, onChanged }: { org: string; project: 
     </div>
   )
 }
+
+// ---------------------------------------------------------------- Links de Git (branch, PR, commit)
+
+type GitArtifact =
+  | { kind: 'branch'; repoId: string; name: string }
+  | { kind: 'pr'; repoId: string; id: number }
+  | { kind: 'commit'; repoId: string; sha: string }
+
+/**
+ * Decodifica os links de artefato do ADO:
+ *   vstfs:///Git/Ref/{projeto}%2F{repo}%2FGB{branch}        (barras do nome da branch vêm como %252F)
+ *   vstfs:///Git/PullRequestId/{projeto}%2F{repo}%2F{id}
+ *   vstfs:///Git/Commit/{projeto}%2F{repo}%2F{sha}
+ */
+function parseGitArtifact(url: string): GitArtifact | null {
+  const m = url.match(/^vstfs:\/\/\/Git\/(Ref|PullRequestId|Commit)\/(.+)$/i)
+  if (!m) return null
+  // O separador vem como %2F ou %2f, conforme quem criou o link
+  const parts = m[2]!.split(/%2F/i)
+  if (parts.length < 3) return null
+  const repoId = decodeURIComponent(parts[1]!)
+  const rest = parts.slice(2).join('%2F')
+  const kind = m[1]!.toLowerCase()
+  try {
+    if (kind === 'ref') {
+      const ref = decodeURIComponent(decodeURIComponent(rest))
+      // GB = branch; GT = tag; GC = commit. Só branch vira link de branch.
+      if (!ref.startsWith('GB')) return null
+      return { kind: 'branch', repoId, name: ref.slice(2) }
+    }
+    if (kind === 'pullrequestid') return { kind: 'pr', repoId, id: Number(decodeURIComponent(rest)) }
+    return { kind: 'commit', repoId, sha: decodeURIComponent(rest) }
+  } catch {
+    return null
+  }
+}
+
+function GitArtifactLink({ org, artifact }: { org: string; artifact: GitArtifact }) {
+  const navigate = useNavigate()
+  // O link só traz ids: o repositório (nome e projeto) e o PR (título e estado) vêm da API, com cache
+  const repo = useQuery({
+    queryKey: [org, 'git-repo-by-id', artifact.repoId],
+    staleTime: 10 * 60_000,
+    queryFn: () => ado<{ name: string; project: { name: string } }>({ org, path: `_apis/git/repositories/${artifact.repoId}` })
+  })
+  const pr = useQuery({
+    queryKey: [org, 'git-pr-by-id', artifact.kind === 'pr' ? artifact.id : null],
+    enabled: artifact.kind === 'pr',
+    staleTime: 60_000,
+    queryFn: () =>
+      ado<{ title: string; status: string; isDraft?: boolean; mergeStatus?: string }>({
+        org,
+        path: `_apis/git/pullrequests/${(artifact as { id: number }).id}`
+      })
+  })
+  const base = repo.data ? `/${org}/${seg(repo.data.project.name)}/repos` : null
+  const go = (path: string) => base && navigate(`${base}${path}`)
+  const repoName = repo.data ? seg(repo.data.name) : ''
+  const linkCls = 'min-w-0 truncate text-left text-new-ink hover:underline disabled:text-muted disabled:no-underline'
+
+  if (artifact.kind === 'branch')
+    return (
+      <button type="button" disabled={!base} onClick={() => go(`/files/${repoName}?v=${encodeURIComponent(`branch:${artifact.name}`)}`)} className={`${linkCls} font-mono text-[12px]`} title={repo.data ? `${repo.data.name} · ${artifact.name}` : artifact.name}>
+        {artifact.name}
+      </button>
+    )
+  if (artifact.kind === 'commit')
+    return (
+      <button type="button" disabled={!base} onClick={() => go(`/commits/${repoName}?c=${artifact.sha}`)} className={`${linkCls} font-mono text-[12px]`} title={artifact.sha}>
+        {artifact.sha.slice(0, 8)}
+      </button>
+    )
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <button type="button" disabled={!base} onClick={() => go(`/pullrequest/${repoName}/${artifact.id}`)} className={linkCls} title={pr.data?.title}>
+        <span className="narrow mr-1.5 font-semibold">!{artifact.id}</span>
+        {pr.data?.title ?? (pr.isError ? '' : '…')}
+      </button>
+      {pr.data && <StateLabel zone={prZone(pr.data.status, pr.data.isDraft, pr.data.mergeStatus)}>{PR_STATUS_LABEL[pr.data.status] ?? pr.data.status}</StateLabel>}
+    </span>
+  )
+}
+
+const PR_STATUS_LABEL: Record<string, string> = { active: 'Ativo', completed: 'Concluído', abandoned: 'Abandonado' }
 
 // ---------------------------------------------------------------- Anexos
 

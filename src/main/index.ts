@@ -2,11 +2,24 @@ import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { adoRequest, type AdoRequest } from './ado'
 
-// Menu sem "Fechar janela" (Ctrl+W): o Ctrl+W é das abas no renderer.
+// Menu sem "Fechar janela" (Ctrl+W) e sem "Recarregar" em Ctrl+R/F5: esses atalhos são do renderer
+// (fechar aba e recarregar os dados sem perder abas). Recarregar a janela inteira fica em Ctrl+Shift+R.
 Menu.setApplicationMenu(
   Menu.buildFromTemplate([
     { role: 'editMenu' },
-    { role: 'viewMenu' }
+    {
+      label: 'Exibir',
+      submenu: [
+        { role: 'forceReload', label: 'Recarregar janela', accelerator: 'CmdOrCtrl+Shift+R' },
+        { role: 'toggleDevTools', label: 'Ferramentas de desenvolvedor' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: 'Zoom padrão' },
+        { role: 'zoomIn', label: 'Aumentar zoom' },
+        { role: 'zoomOut', label: 'Diminuir zoom' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: 'Tela cheia' }
+      ]
+    }
   ])
 )
 

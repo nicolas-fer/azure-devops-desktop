@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, Search as SearchIcon, Settings } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, RefreshCw, Search as SearchIcon, Settings } from 'lucide-react'
 import { cx, ErrorBox, Loading, Avatar } from '@/components/ui'
 import { useAccounts, useProfile, useProjects } from '@/lib/context'
 import { home, orgSettings, projectFeatures, projectSettings, search } from '@/features/registry'
@@ -190,19 +190,36 @@ function TopBar({ org }: { org: string }) {
   const inProject = project !== undefined && !project.startsWith('_')
   const active = useTabActive()
   const { openTab } = useTabs()
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Ctrl+K foca a busca global da aba ativa (abas ocultas também estão montadas)
+  // Recarrega os dados (todas as consultas em uso) sem recarregar a janela: abas, rolagem e filtros ficam
+  const refresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await queryClient.invalidateQueries()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  // Ctrl+K foca a busca; F5 e Ctrl+R recarregam os dados. Só na aba ativa (abas ocultas também estão montadas)
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const key = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && key === 'k') {
         e.preventDefault()
         searchRef.current?.focus()
+      } else if (key === 'f5' || ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'r')) {
+        e.preventDefault()
+        void refresh()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active])
+  })
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[#0a2f36] bg-shell pr-3 pl-4 text-shell-fg">
@@ -254,6 +271,15 @@ function TopBar({ org }: { org: string }) {
         </span>
       </form>
       <div className="flex-1" />
+      <button
+        title="Recarregar dados (F5)"
+        aria-label="Recarregar dados"
+        onClick={() => void refresh()}
+        disabled={refreshing}
+        className="rounded-sm p-1.5 hover:bg-shell-hover disabled:cursor-progress"
+      >
+        <RefreshCw className={cx('size-4', refreshing && 'animate-spin')} />
+      </button>
       <button
         title="Configurações da organização"
         aria-label="Configurações da organização"
