@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, RefreshCw, Search as SearchIcon, Settings } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, PanelLeftClose, PanelLeftOpen, RefreshCw, Search as SearchIcon, Settings } from 'lucide-react'
 import { cx, ErrorBox, Loading, Avatar } from '@/components/ui'
 import { useAccounts, useProfile, useProjects } from '@/lib/context'
 import { home, orgSettings, projectFeatures, projectSettings, search } from '@/features/registry'
 import type { FeatureModule } from '@/features/types'
 import { useTabActive, useTabs } from '@/tabs/context'
+import { useTabHistory } from '@/tabs/history'
 
 const LAST_KEY = 'devops-desktop:last'
 const COLLAPSED_KEY = 'devops-desktop:collapsed'
@@ -192,6 +193,7 @@ function TopBar({ org }: { org: string }) {
   const { openTab } = useTabs()
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
+  const history = useTabHistory()
 
   // Recarrega os dados (todas as consultas em uso) sem recarregar a janela: abas, rolagem e filtros ficam
   const refresh = async () => {
@@ -215,14 +217,54 @@ function TopBar({ org }: { org: string }) {
       } else if (key === 'f5' || ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'r')) {
         e.preventDefault()
         void refresh()
+      } else if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        history.back()
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        history.forward()
+      }
+    }
+    // Botões laterais do mouse (voltar = 3, avançar = 4)
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        history.back()
+      } else if (e.button === 4) {
+        e.preventDefault()
+        history.forward()
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('mouseup', onMouse)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mouseup', onMouse)
+    }
   })
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[#0a2f36] bg-shell pr-3 pl-4 text-shell-fg">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[#0a2f36] bg-shell pr-3 pl-2 text-shell-fg">
+      <div className="flex items-center">
+        <button
+          title="Voltar (Alt+←)"
+          aria-label="Voltar"
+          onClick={history.back}
+          disabled={!history.canBack}
+          className="rounded-sm p-1.5 hover:bg-shell-hover disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+        >
+          <ArrowLeft className="size-4" />
+        </button>
+        <button
+          title="Avançar (Alt+→)"
+          aria-label="Avançar"
+          onClick={history.forward}
+          disabled={!history.canForward}
+          className="rounded-sm p-1.5 hover:bg-shell-hover disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+        >
+          <ArrowRight className="size-4" />
+        </button>
+      </div>
       <button onClick={() => navigate(`/${org}/_home`)} className="narrow text-base font-bold text-white">
         DevOps Desktop
       </button>

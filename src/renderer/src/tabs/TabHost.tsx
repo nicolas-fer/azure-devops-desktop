@@ -2,6 +2,7 @@ import { memo, useEffect } from 'react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { App } from '@/App'
 import { TabActiveContext } from './context'
+import { TabHistoryProvider } from './history'
 
 interface TabHostProps {
   id: string
@@ -22,7 +23,9 @@ export const TabHost = memo(function TabHost({ id, initialRoute, active, registe
       <MemoryRouter initialEntries={[initialRoute]}>
         <TabBridge id={id} register={register} onRoute={onRoute} />
         <TabActiveContext.Provider value={active}>
-          <App />
+          <TabHistoryProvider>
+            <App />
+          </TabHistoryProvider>
         </TabActiveContext.Provider>
       </MemoryRouter>
     </div>
