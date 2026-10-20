@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="0" y="0" width="256" height="256" rx="44" ry="44" fill="#0d3b44"/>
+  <!-- linha 1 -->
+  <rect x="52" y="58" width="24" height="38" fill="#1e9e5a"/>
+  <rect x="84" y="62" width="136" height="30" rx="5" ry="5" fill="#e8f1f0"/>
+  <!-- linha 2 -->
+  <rect x="52" y="110" width="24" height="38" fill="#e3a008"/>
+  <rect x="84" y="114" width="104" height="30" rx="5" ry="5" fill="#e8f1f0"/>
+  <!-- linha 3 -->
+  <rect x="52" y="162" width="24" height="38" fill="#2f6fde"/>
+  <rect x="84" y="166" width="84" height="30" rx="5" ry="5" fill="#e8f1f0"/>
+  <!-- filete -->
+  <rect x="52" y="216" width="152" height="6" rx="3" ry="3" fill="#3fd1b5"/>
+</svg>

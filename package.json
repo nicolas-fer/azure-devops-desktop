@@ -1,0 +1,126 @@
+{
+  "name": "devops-desktop",
+  "version": "0.1.6",
+  "private": true,
+  "description": "Cliente desktop do Azure DevOps com autenticação via PAT",
+  "author": {
+    "name": "Nicolas Fernando",
+    "email": "74027537+nicolas-fer@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/nicolas-fer/azure-devops-desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicolas-fer/azure-devops-desktop.git"
+  },
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "postinstall": "install-electron",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.nicolas.devopsdesktop",
+    "productName": "DevOps Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DevOps Desktop",
+      "artifactName": "DevOps-Desktop-Setup-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nicolas-fer",
+        "repo": "azure-devops-desktop",
+        "releaseType": "release"
+      }
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Development",
+      "executableName": "devops-desktop",
+      "synopsis": "Cliente desktop do Azure DevOps com autenticação via PAT",
+      "maintainer": "Nicolas Fernando <74027537+nicolas-fer@users.noreply.github.com>"
+    },
+    "appImage": {
+      "artifactName": "DevOps-Desktop-${version}.AppImage"
+    },
+    "deb": {
+      "artifactName": "devops-desktop_${version}_amd64.deb"
+    }
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/archivo-narrow": "^5.3.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-query": "^5.104.5",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "diff": "^9.0.0",
+    "lucide-react": "^1.60.0",
+    "monaco-editor": "^0.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.4",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

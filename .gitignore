@@ -1,0 +1,10 @@
+node_modules/
+out/
+dist/
+
+# Material de processo de design e planejamento (fica só local)
+.superdesign/
+.impeccable/
+docs/
+PRODUCT.md
+.claude/
