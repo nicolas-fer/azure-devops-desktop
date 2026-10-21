@@ -402,6 +402,7 @@ function Taskboard({
                       <span>· {l.count === 0 ? 'sem tarefas' : `${l.count} ${l.count === 1 ? 'item' : 'itens'}`}</span>
                     </span>
                     <div className="line-clamp-2 font-medium">{l.title}</div>
+                    {l.parent && <AssigneeLine who={asIdentity(l.parent.fields['System.AssignedTo'])} />}
                   </button>
                 ) : (
                   <span className="text-muted">{l.title}</span>
@@ -435,6 +436,24 @@ function readShowDone(): boolean {
   } catch {
     return false
   }
+}
+
+/** Responsável (avatar + nome) ou "Não atribuído" tracejado; mesma altura nos cards e nos itens pai. */
+function AssigneeLine({ who }: { who: ReturnType<typeof asIdentity> }) {
+  return (
+    <div className="mt-1 flex h-5 items-center">
+      {who ? (
+        <Person identity={who} size={18} />
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-muted">
+          <span className="inline-flex size-[18px] items-center justify-center rounded-full border border-dashed border-muted/60 text-[10px]" aria-hidden>
+            —
+          </span>
+          Não atribuído
+        </span>
+      )}
+    </div>
+  )
 }
 
 function LaneIcon({ type }: { type?: string }) {
@@ -482,18 +501,7 @@ function TaskCard({ w, zone, mine, onOpen }: { w: WorkItem; zone: Zone; mine: bo
         </div>
         {/* Título sempre ocupa 2 linhas e a linha de responsável sempre existe: todos os cards ficam da mesma altura */}
         <div className="line-clamp-2 min-h-9 leading-[18px]">{f['System.Title']}</div>
-        <div className="mt-1 flex h-5 items-center">
-          {who ? (
-            <Person identity={who} size={18} />
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-muted">
-              <span className="inline-flex size-[18px] items-center justify-center rounded-full border border-dashed border-muted/60 text-[10px]" aria-hidden>
-                —
-              </span>
-              Não atribuído
-            </span>
-          )}
-        </div>
+        <AssigneeLine who={who} />
       </div>
     </div>
   )
