@@ -330,6 +330,13 @@ function Taskboard({
     return l.id !== 0 || has
   })
   const shown = tasks.filter((t) => lanes.some((l) => l.id === parentOf(t)) && visibleTask(t, parentOf(t)))
+  // Peso de cada coluna = maior número de cards de uma linha nesse estado (até 4): estados cheios ganham largura e os cards ficam lado a lado
+  const grow = Object.fromEntries(
+    states.map((s) => {
+      const counts = lanes.map((l) => shown.filter((t) => parentOf(t) === l.id && t.fields['System.State'] === s.name).length)
+      return [s.name, Math.min(4, Math.max(1, ...counts))]
+    })
+  )
   const hiddenClosed = showDone ? 0 : allLanes.filter((l) => l.closed).length
   const anyFilter = term !== '' || cardFiltered
   const onDragEnd = (e: DragEndEvent) => {
@@ -379,11 +386,12 @@ function Taskboard({
       ) : (
     <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="flex min-w-max flex-col">
+        {/* Colunas de estado dividem a largura disponível; abaixo do mínimo a área rola na horizontal */}
+        <div className="flex flex-col" style={{ minWidth: 240 + states.length * (220 + 12) }}>
           <div className="sticky top-0 z-20 flex gap-3 border-b-2 border-rule-strong bg-bg pt-4 pb-1">
             <div className="w-[240px] shrink-0 colhead">Item</div>
             {states.map((s) => (
-              <div key={s.name} className="flex w-[220px] shrink-0 items-center gap-2 colhead">
+              <div key={s.name} className="flex min-w-[220px] basis-0 items-center gap-2 colhead" style={{ flexGrow: grow[s.name] }}>
                 <ZoneSquare zone={stateZone(s.name)} />
                 <span>{s.name}</span>
                 <span className="narrow text-[13px] font-bold text-fg">{shown.filter((t) => t.fields['System.State'] === s.name).length}</span>
@@ -409,7 +417,7 @@ function Taskboard({
                 )}
               </div>
               {states.map((s) => (
-                <DropCell key={`${l.id}-${s.name}`} id={`tb-${l.id}-${s.name}`} state={s.name}>
+                <DropCell key={`${l.id}-${s.name}`} id={`tb-${l.id}-${s.name}`} state={s.name} grow={grow[s.name]}>
                   {shown
                     .filter((t) => parentOf(t) === l.id && t.fields['System.State'] === s.name)
                     .map((t) => (
@@ -463,10 +471,10 @@ function LaneIcon({ type }: { type?: string }) {
   return <Icon className="size-3.5 shrink-0" style={{ color: ico.color }} aria-label={type} />
 }
 
-function DropCell({ id, state, children }: { id: string; state: string; children: ReactNode }) {
+function DropCell({ id, state, grow, children }: { id: string; state: string; grow: number; children: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id, data: { state } })
   return (
-    <div ref={setNodeRef} className={`flex min-h-16 w-[220px] shrink-0 flex-col gap-2 rounded-sm p-1 transition-colors ${isOver ? 'bg-surface-2 outline-2 outline-dashed outline-focus' : ''}`}>
+    <div ref={setNodeRef} style={{ flexGrow: grow }} className={`grid min-h-16 min-w-[220px] basis-0 grid-cols-[repeat(auto-fill,minmax(176px,1fr))] content-start gap-2 rounded-sm p-1 transition-colors ${isOver ? 'bg-surface-2 outline-2 outline-dashed outline-focus' : ''}`}>
       {children}
     </div>
   )
