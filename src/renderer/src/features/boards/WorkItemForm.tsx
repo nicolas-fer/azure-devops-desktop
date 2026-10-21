@@ -3,7 +3,9 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { prZone } from '@/lib/zones'
-import { Copy, Download, Paperclip, Pencil, Plus, Save, Send, Trash2, X, History as HistoryIcon } from 'lucide-react'
+import { useMe, isMe } from '@/lib/context'
+import { useTabActive } from '@/tabs/context'
+import { Copy, Download, Paperclip, Pencil, Plus, Save, Send, Trash2, UserCheck, X, History as HistoryIcon } from 'lucide-react'
 import { ado, adoList, seg, webUrl, AdoError, saveBase64 } from '@/lib/api'
 import { Button, Field, Html, IconButton, Input, QueryView, Select, Tabs, Textarea, TimeAgo, Person, ExternalButton, Empty, Code, Badge, StateLabel, formatDate, Loading } from '@/components/ui'
 import {
@@ -136,6 +138,40 @@ function Editor({
     onError: (e) => setErr(errMsg(e))
   })
 
+  // Atribuir a mim: grava na hora só o responsável (não leva junto outras alterações pendentes)
+  const me = useMe(org)
+  const assignedToMe = isMe(me.data, asIdentity(f['System.AssignedTo']))
+  const assignMe = useMutation({
+    mutationFn: () =>
+      patchWorkItem(org, project, wi.id, [
+        { op: 'add', path: '/fields/System.AssignedTo', value: me.data!.uniqueName || me.data!.displayName }
+      ]),
+    onSuccess: () => {
+      setDraft((d) => {
+        const { ['System.AssignedTo']: _ignorado, ...resto } = d
+        return resto
+      })
+      setErr(null)
+      invalidate()
+    },
+    onError: (e) => setErr(errMsg(e))
+  })
+  const canAssignMe = !!me.data && !assignedToMe && !assignMe.isPending
+
+  // Alt+M atribui a mim (só na aba visível; o formulário pode estar num painel lateral)
+  const tabActive = useTabActive()
+  useEffect(() => {
+    if (!tabActive) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'm' && canAssignMe) {
+        e.preventDefault()
+        assignMe.mutate()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const remove = useMutation({
     mutationFn: () => ado({ org, path: `${seg(project)}/_apis/wit/workitems/${wi.id}`, method: 'DELETE' }),
     onSuccess: () => {
@@ -256,7 +292,13 @@ function Editor({
           <Field label="Motivo">
             <Input value={val('System.Reason') ?? ''} onChange={(e) => set('System.Reason', e.target.value)} />
           </Field>
-          <AssignedField org={org} value={asIdentity(val('System.AssignedTo'))} onPick={(v) => set('System.AssignedTo', v)} />
+          <AssignedField
+            org={org}
+            value={asIdentity(val('System.AssignedTo'))}
+            onPick={(v) => set('System.AssignedTo', v)}
+            onAssignMe={canAssignMe || assignMe.isPending ? () => assignMe.mutate() : undefined}
+            assigningMe={assignMe.isPending}
+          />
           <Field label="Área">
             <Select value={val('System.AreaPath') ?? ''} onChange={(e) => set('System.AreaPath', e.target.value)}>
               {(areas.data ?? []).map((n) => (
@@ -408,8 +450,58 @@ function TagsField({ value, onChange }: { value: string; onChange: (v: string) =
   )
 }
 
-/** Busca de identidade no vssps (General). Escolher grava o uniqueName. */
-function AssignedField({ org, value, onPick }: { org: string; value: { displayName: string; uniqueName?: string } | null; onPick: (v: string | null) => void }) {
+interface PickedIdentity {
+  id: string
+  displayName: string
+  /** E-mail/UPN: é o que o ADO aceita em System.AssignedTo. */
+  uniqueName: string
+}
+
+/**
+ * Busca de pessoas pelo IdentityPicker — a mesma API do seletor de pessoas do Azure DevOps.
+ * (A busca "General" de _apis/identities não encontra usuários do Entra ID nesta API e voltava vazia.)
+ */
+async function searchPeople(org: string, query: string): Promise<PickedIdentity[]> {
+  const res = await ado<{
+    results?: { identities?: { localId?: string | null; originId?: string; displayName?: string; signInAddress?: string; mail?: string; entityId?: string }[] }[]
+  }>({
+    org,
+    path: '_apis/IdentityPicker/Identities',
+    method: 'POST',
+    apiVersion: '7.1-preview.1',
+    body: {
+      query,
+      identityTypes: ['user'],
+      operationScopes: ['ims', 'source'],
+      options: { MinResults: 5, MaxResults: 20 },
+      properties: ['DisplayName', 'Mail', 'SignInAddress']
+    }
+  })
+  const seen = new Set<string>()
+  const out: PickedIdentity[] = []
+  for (const i of res.results?.[0]?.identities ?? []) {
+    const uniqueName = i.signInAddress || i.mail || ''
+    if (!i.displayName || !uniqueName || seen.has(uniqueName.toLowerCase())) continue
+    seen.add(uniqueName.toLowerCase())
+    out.push({ id: i.localId ?? i.originId ?? i.entityId ?? uniqueName, displayName: i.displayName, uniqueName })
+  }
+  return out
+}
+
+/** Responsável: busca de pessoas e atalho "Atribuir a mim". Escolher alguém marca a alteração (salva com Salvar/Ctrl+S). */
+function AssignedField({
+  org,
+  value,
+  onPick,
+  onAssignMe,
+  assigningMe
+}: {
+  org: string
+  value: { displayName: string; uniqueName?: string } | null
+  onPick: (v: string | null) => void
+  onAssignMe?: () => void
+  assigningMe?: boolean
+}) {
   const [text, setText] = useState('')
   const [term, setTerm] = useState('')
   useEffect(() => {
@@ -417,14 +509,28 @@ function AssignedField({ org, value, onPick }: { org: string; value: { displayNa
     return () => clearTimeout(t)
   }, [text])
   const found = useQuery({
-    queryKey: [org, 'wi-identities', term],
+    queryKey: [org, 'wi-people', term],
     enabled: term.length >= 2,
     staleTime: 60_000,
-    queryFn: () => adoList<{ id: string; providerDisplayName: string; properties?: { Account?: { $value: string } } }>({ org, host: 'vssps', path: '_apis/identities', query: { searchFilter: 'General', filterValue: term } })
+    queryFn: () => searchPeople(org, term)
   })
   return (
     <div className="flex flex-col gap-1">
-      <span className="colhead">Atribuído a</span>
+      <span className="flex items-center gap-2">
+        <span className="colhead flex-1">Atribuído a</span>
+        {onAssignMe && (
+          <button
+            type="button"
+            onClick={onAssignMe}
+            disabled={assigningMe}
+            title="Atribuir a mim e salvar (Alt+M)"
+            className="inline-flex items-center gap-1 text-[12px] font-medium text-new-ink hover:underline disabled:opacity-60"
+          >
+            <UserCheck className="size-3.5" />
+            {assigningMe ? 'Atribuindo…' : 'Atribuir a mim'}
+          </button>
+        )}
+      </span>
       <div className="text-sm">{value ? <Person identity={{ id: '', displayName: value.displayName, uniqueName: value.uniqueName }} /> : <span className="text-muted">Não atribuído</span>}</div>
       <Input value={text} placeholder="Buscar pessoa…" onChange={(e) => setText(e.target.value)} aria-label="Buscar pessoa" />
       {term.length >= 2 && found.isLoading && <Loading label="Buscando…" />}
@@ -432,23 +538,21 @@ function AssignedField({ org, value, onPick }: { org: string; value: { displayNa
       {term.length >= 2 && found.data && (
         <div className="flex max-h-40 flex-col overflow-auto rounded-sm border border-border bg-surface">
           {found.data.length === 0 && <div className="px-2 py-1 text-[12px] text-muted">Ninguém encontrado</div>}
-          {found.data.map((i) => {
-            const un = i.properties?.Account?.$value ?? i.providerDisplayName
-            return (
-              <button
-                key={i.id}
-                type="button"
-                className="px-2 py-1 text-left text-[12.5px] hover:bg-surface-2"
-                onClick={() => {
-                  onPick(un)
-                  setText('')
-                  setTerm('')
-                }}
-              >
-                {i.providerDisplayName}
-              </button>
-            )
-          })}
+          {found.data.map((i) => (
+            <button
+              key={i.uniqueName}
+              type="button"
+              className="flex flex-col px-2 py-1 text-left hover:bg-surface-2"
+              onClick={() => {
+                onPick(i.uniqueName)
+                setText('')
+                setTerm('')
+              }}
+            >
+              <span className="text-[12.5px]">{i.displayName}</span>
+              <span className="truncate text-[11px] text-muted">{i.uniqueName}</span>
+            </button>
+          ))}
         </div>
       )}
       {value && (
