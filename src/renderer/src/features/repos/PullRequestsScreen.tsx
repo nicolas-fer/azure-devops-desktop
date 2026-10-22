@@ -1,6 +1,6 @@
 // Tela Pull requests: lista do projeto ou de um repositório. Abas Meus/Ativos/Concluídos/Abandonados,
 // faixa de zona por status (prZone), roxo para PR meu ou revisão pedida a mim, revisores com marca de voto.
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -14,6 +14,7 @@ import {
   ErrorBox,
   ExternalButton,
   IdCell,
+  Input,
   Loading,
   PageHeader,
   Select,
@@ -54,6 +55,9 @@ export function PullRequestsScreen() {
   const repos = useRepos(org, project)
   const [tab, setTab] = useState<Tab>('meus')
   const [zoneFilter, setZoneFilter] = useState<Zone | null>(null)
+  const [srcFilter, setSrcFilter] = useState('')
+  const [dstFilter, setDstFilter] = useState('')
+  const listId = useId()
 
   const scopePath = repo ? repoPath(project, repo) : seg(project) + '/_apis/git'
   const meId = me.data?.id
@@ -76,10 +80,25 @@ export function PullRequestsScreen() {
     }
   })
 
-  const rows = prs.data ?? []
+  const all = prs.data ?? []
   const mineOf = (p: GitPullRequest) => isMe(me.data, p.createdBy) || p.reviewers.some((r) => isMe(me.data, r))
+  // Filtro por branch: trecho do nome, sem diferenciar maiúsculas (ex.: "staging", "CS_BS20896")
+  const srcTerm = srcFilter.trim().toLowerCase()
+  const dstTerm = dstFilter.trim().toLowerCase()
+  const rows = all.filter(
+    (p) =>
+      (!srcTerm || shortRef(p.sourceRefName).toLowerCase().includes(srcTerm)) &&
+      (!dstTerm || shortRef(p.targetRefName).toLowerCase().includes(dstTerm))
+  )
   const shown = rows.filter((p) => !zoneFilter || zoneOf(p) === zoneFilter)
   const counts = (z: Zone) => rows.filter((p) => zoneOf(p) === z).length
+  // Sugestões dos campos: branches presentes na lista carregada, mais usadas primeiro
+  const branchOptions = (pick: (p: GitPullRequest) => string) => {
+    const freq = new Map<string, number>()
+    for (const p of all) freq.set(shortRef(pick(p)), (freq.get(shortRef(pick(p))) ?? 0) + 1)
+    return [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([b]) => b)
+  }
+  const branchFiltered = srcTerm !== '' || dstTerm !== ''
 
   const columns: Column<GitPullRequest>[] = [
     {
@@ -228,12 +247,61 @@ export function PullRequestsScreen() {
           value={zoneFilter}
           onSelect={setZoneFilter}
         />
+        <span className="flex-1" />
+        <div className="flex items-center gap-1.5">
+          <span className="colhead">Origem</span>
+          <Input
+            value={srcFilter}
+            onChange={(e) => setSrcFilter(e.target.value)}
+            list={`${listId}-src`}
+            placeholder="ex.: feature/…"
+            className="w-56 font-mono text-[12px]"
+            aria-label="Filtrar pela branch de origem"
+          />
+          <datalist id={`${listId}-src`}>
+            {branchOptions((p) => p.sourceRefName).map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
+        </div>
+        <span className="text-muted">→</span>
+        <div className="flex items-center gap-1.5">
+          <span className="colhead">Destino</span>
+          <Input
+            value={dstFilter}
+            onChange={(e) => setDstFilter(e.target.value)}
+            list={`${listId}-dst`}
+            placeholder="ex.: staging"
+            className="w-44 font-mono text-[12px]"
+            aria-label="Filtrar pela branch de destino"
+          />
+          <datalist id={`${listId}-dst`}>
+            {branchOptions((p) => p.targetRefName).map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
+        </div>
+        {branchFiltered && (
+          <Button variant="ghost" size="sm" onClick={() => (setSrcFilter(''), setDstFilter(''))}>
+            Limpar
+          </Button>
+        )}
       </Toolbar>
       <div className="scroll min-h-0 flex-1 overflow-auto">
         {(prs.isLoading || me.isLoading) && <Loading label="Carregando pull requests…" />}
         {prs.isError && <ErrorBox error={prs.error} onRetry={() => prs.refetch()} />}
         {me.isError && <ErrorBox error={me.error} onRetry={() => me.refetch()} />}
-        {prs.data && shown.length === 0 && <Empty title={tab === 'meus' ? 'Nenhuma PR sua ou pedindo sua revisão' : 'Nenhuma pull request aqui'} />}
+        {prs.data && shown.length === 0 && (
+          <Empty
+            title={
+              branchFiltered
+                ? 'Nenhuma pull request com essas branches'
+                : tab === 'meus'
+                  ? 'Nenhuma PR sua ou pedindo sua revisão'
+                  : 'Nenhuma pull request aqui'
+            }
+          />
+        )}
         {prs.data && shown.length > 0 && (
           <FixedTable
             rows={shown}
