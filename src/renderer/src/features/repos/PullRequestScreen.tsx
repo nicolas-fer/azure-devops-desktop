@@ -47,8 +47,10 @@ import {
   usePullRequest
 } from './prData'
 import { ado } from '@/lib/api'
+import { PrFilesPane } from './PrFilesTree'
+import { AiReviewTab } from './AiReviewTab'
 
-type PrTab = 'visao' | 'arquivos' | 'atualizacoes' | 'commits'
+type PrTab = 'visao' | 'arquivos' | 'atualizacoes' | 'commits' | 'ia'
 
 const STATE_LABEL: Record<string, string> = { new: 'Rascunho', progress: 'Ativo', fail: 'Conflito', done: 'Concluído', idle: 'Abandonado' }
 
@@ -74,6 +76,11 @@ function PrView({ org, project, repo, id }: { org: string; project: string; repo
   const [params, setParams] = useSearchParams()
   const pr = usePullRequest(org, project, repo, id)
   const tab = (params.get('tab') as PrTab) || 'visao'
+  // A aba Revisão IA, uma vez aberta, continua montada enquanto o PR estiver aberto
+  const [aiOpened, setAiOpened] = useState(tab === 'ia')
+  useEffect(() => {
+    if (tab === 'ia') setAiOpened(true)
+  }, [tab])
   const setTab = (t: PrTab) => {
     const p = new URLSearchParams(params)
     p.set('tab', t)
@@ -131,7 +138,8 @@ function PrView({ org, project, repo, id }: { org: string; project: string; repo
             { key: 'visao', label: 'Visão geral' },
             { key: 'arquivos', label: 'Arquivos', count: changes.data?.changeEntries.length },
             { key: 'atualizacoes', label: 'Atualizações', count: iterations.data?.length },
-            { key: 'commits', label: 'Commits', count: commits.data?.length }
+            { key: 'commits', label: 'Commits', count: commits.data?.length },
+            { key: 'ia', label: 'Revisão IA' }
           ]}
         />
       </PageHeader>
@@ -147,8 +155,14 @@ function PrView({ org, project, repo, id }: { org: string; project: string; repo
             setParams(q)
           }} />}
           {tab === 'commits' && <CommitsTab commits={commits} />}
+          {/* Revisão IA fica montada depois de aberta (só escondida), para não matar a sessão do claude ao trocar de aba */}
+          {(tab === 'ia' || aiOpened) && (
+            <div className={tab === 'ia' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+              <AiReviewTab org={org} project={project} pr={p} />
+            </div>
+          )}
         </div>
-        <PrRail org={org} project={project} pr={p} />
+        {tab !== 'ia' && <PrRail org={org} project={project} pr={p} />}
       </div>
     </div>
   )
@@ -286,6 +300,7 @@ function FilesTab({
     () => (changes.data?.changeEntries ?? []).slice().sort((a, b) => a.item.path.localeCompare(b.item.path, 'pt-BR')),
     [changes.data]
   )
+  const treeItems = useMemo(() => entries.map((e) => ({ path: e.item.path, changeType: e.changeType })), [entries])
   const selected = entries.find((e) => e.item.path === file) ?? entries[0]
   const fileThreads = (threads.data ?? []).filter((t) => t.threadContext?.filePath === selected?.item.path)
 
@@ -328,71 +343,49 @@ function FilesTab({
       ) : entries.length === 0 ? (
         <Empty title="Nenhum arquivo alterado" />
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <ul className="scroll w-72 shrink-0 overflow-auto border-r border-border bg-surface">
-            {entries.map((e) => (
-              <li key={e.item.path}>
-                <button
-                  type="button"
-                  onClick={() => setFile(e.item.path)}
-                  className={cx('flex w-full items-center gap-2 border-b border-border px-3 py-1.5 text-left hover:bg-surface-2', selected?.item.path === e.item.path && 'bg-surface-2 font-semibold')}
-                >
-                  <ChangeTag type={e.changeType} />
-                  <span className="truncate font-mono text-[12px]">{e.item.path}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {selected && (
-              <FileDiffPr org={org} project={project} repo={repo} pr={pr} iter={iter} cmp={cmp} change={selected} sideBySide={side} />
-            )}
-            {selected && (
-              <div className="scroll max-h-[45%] overflow-auto border-t border-border bg-surface p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="colhead flex-1">Comentários no arquivo</span>
-                  {!commenting && (
-                    <Button size="sm" onClick={() => setCommenting(true)}>
-                      Comentar em linha
-                    </Button>
-                  )}
-                </div>
-                {commenting && (
-                  <div className="mb-3 flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-[12px] text-muted">
-                      Linha (lado novo)
-                      <Input className="h-7 w-24" type="number" min={1} value={line} onChange={(e) => setLine(e.target.value)} />
-                    </label>
-                    <NewThreadForm
-                      org={org}
-                      project={project}
-                      pr={pr}
-                      filePath={selected.item.path}
-                      line={Number(line) || undefined}
-                      placeholder="Comentário nesta linha…"
-                      onDone={() => setCommenting(false)}
-                    />
-                  </div>
+        <PrFilesPane items={treeItems} selectedPath={selected?.item.path} onSelect={setFile}>
+          {selected && (
+            <FileDiffPr org={org} project={project} repo={repo} pr={pr} iter={iter} cmp={cmp} change={selected} sideBySide={side} />
+          )}
+          {selected && (
+            <div className="scroll max-h-[45%] overflow-auto border-t border-border bg-surface p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="colhead flex-1">Comentários no arquivo</span>
+                {!commenting && (
+                  <Button size="sm" onClick={() => setCommenting(true)}>
+                    Comentar em linha
+                  </Button>
                 )}
-                <div className="flex flex-col gap-2">
-                  {fileThreads.map((t) => (
-                    <ThreadCard key={t.id} org={org} project={project} pr={pr} thread={t} />
-                  ))}
-                  {fileThreads.length === 0 && !commenting && <div className="text-[12px] text-muted">Nenhum comentário neste arquivo.</div>}
-                </div>
               </div>
-            )}
-          </div>
-        </div>
+              {commenting && (
+                <div className="mb-3 flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-[12px] text-muted">
+                    Linha (lado novo)
+                    <Input className="h-7 w-24" type="number" min={1} value={line} onChange={(e) => setLine(e.target.value)} />
+                  </label>
+                  <NewThreadForm
+                    org={org}
+                    project={project}
+                    pr={pr}
+                    filePath={selected.item.path}
+                    line={Number(line) || undefined}
+                    placeholder="Comentário nesta linha…"
+                    onDone={() => setCommenting(false)}
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                {fileThreads.map((t) => (
+                  <ThreadCard key={t.id} org={org} project={project} pr={pr} thread={t} />
+                ))}
+                {fileThreads.length === 0 && !commenting && <div className="text-[12px] text-muted">Nenhum comentário neste arquivo.</div>}
+              </div>
+            </div>
+          )}
+        </PrFilesPane>
       )}
     </div>
   )
-}
-
-function ChangeTag({ type }: { type: string }) {
-  const letter = type.includes('add') ? 'A' : type.includes('delete') ? 'D' : type.includes('rename') ? 'R' : 'M'
-  const cls = letter === 'A' ? 'text-done-ink' : letter === 'D' ? 'text-fail-ink' : letter === 'R' ? 'text-new-ink' : 'text-progress-ink'
-  return <span className={cx('narrow w-4 text-center text-[12px] font-bold', cls)}>{letter}</span>
 }
 
 /** Diff de um arquivo entre o alvo e a iteração (ou entre duas iterações). */

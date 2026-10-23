@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { adoRequest, type AdoRequest } from './ado'
+import { killAllSessions, killSession, resizeSession, spawnSession, writeSession, type SpawnOptions } from './pty'
+import { commandExists, pickFolder } from './clone'
 
 // Menu sem "Fechar janela" (Ctrl+W) e sem "Recarregar" em Ctrl+R/F5: esses atalhos são do renderer
 // (fechar aba e recarregar os dados sem perder abas). Recarregar a janela inteira fica em Ctrl+Shift+R.
@@ -51,6 +53,9 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Fechar a janela encerra os terminais da Revisão IA
+  win.on('closed', killAllSessions)
+
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
@@ -59,6 +64,14 @@ ipcMain.handle('ado:request', (_e, req: AdoRequest) => adoRequest(req))
 ipcMain.handle('ado:hasPat', () => Boolean(process.env.AZURE_DEVOPS_EXT_PAT))
 ipcMain.handle('ado:defaultOrg', () => process.env.AZURE_DEVOPS_ORG ?? null)
 ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
+
+// Terminal da Revisão IA (PTY) e escolha da pasta do clone
+ipcMain.handle('pty:spawn', (e, opts: SpawnOptions) => spawnSession(e.sender, opts))
+ipcMain.handle('pty:write', (_e, id: number, data: string) => writeSession(id, data))
+ipcMain.handle('pty:resize', (_e, id: number, cols: number, rows: number) => resizeSession(id, cols, rows))
+ipcMain.handle('pty:kill', (_e, id: number) => killSession(id))
+ipcMain.handle('clone:pickFolder', (e) => pickFolder(BrowserWindow.fromWebContents(e.sender)))
+ipcMain.handle('cli:exists', (_e, name: string) => commandExists(name))
 
 app.whenReady().then(() => {
   createWindow()
@@ -70,3 +83,5 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', killAllSessions)

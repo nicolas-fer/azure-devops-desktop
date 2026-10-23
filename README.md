@@ -190,6 +190,14 @@ AZURE_DEVOPS_EXT_PAT='cole-o-token-aqui' devops-desktop
 
 ---
 
+## Revisão IA
+
+A aba **Revisão IA** de um pull request abre um terminal dentro do app com o Claude Code (`claude`) na pasta do clone local do repositório. Escolha a pasta uma vez por repositório; ela fica salva. É preciso ter o Claude Code instalado e disponível no terminal:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
 ## Desenvolvimento
 
 Requisitos: **Node.js 24** e Git.
